@@ -1,0 +1,180 @@
+# Kubernetes Control Plane Components
+
+---
+
+## Etcd
+
+**etcd** is a distributed key-value store that serves as Kubernetes' primary datastore.
+
+**Key points:**
+- Stores all cluster data (configuration, state, metadata)
+- Holds info about pods, nodes, configs, secrets, accounts, roles, bindings, etc.
+- Consistent and highly-available
+- Uses the Raft consensus algorithm
+- Runs on port **2379** by default
+- Only the **kube-apiserver** communicates with etcd
+- Can be deployed as part of the control plane or as an external cluster
+
+**Commands:**
+- `etcdctl` - CLI tool to interact with etcd
+- Common commands: `get`, `put`, `del`, `snapshot save`, `snapshot restore`
+
+---
+
+## kube-apiserver
+
+**kube-apiserver** is the front-end for the Kubernetes control plane.
+
+**Key points:**
+- Primary management component - all communication goes through it
+- Exposes the Kubernetes API (REST API)
+- Authenticates and validates requests
+- Retrieves and updates data in **etcd**
+- Only component that directly talks to etcd
+- Runs on port **6443** by default (HTTPS)
+- Can run multiple instances for high availability
+- Deployed as a static pod in `/etc/kubernetes/manifests/` (kubeadm setup)
+
+**What it does:**
+- Authentication
+- Authorization
+- Admission control
+- CRUD operations on cluster objects
+- Watches for changes and notifies other components
+
+---
+
+## kube-controller-manager
+
+**kube-controller-manager** runs all the controller processes.
+
+**Key points:**
+- Manages various controllers as a single process
+- Watches the state of the cluster through the API server
+- Makes changes to move current state toward desired state
+- Runs on port **10257** by default
+- Deployed as a static pod in `/etc/kubernetes/manifests/` (kubeadm setup)
+
+**Main controllers:**
+- **Node Controller** - monitors nodes, handles node failures (checks every 5s, waits 40s before marking unreachable, gives 5min to come back up)
+- **Replication Controller** - maintains correct number of pods for ReplicaSets
+- **Deployment Controller** - manages deployments
+- **Service Account Controller** - creates default service accounts and tokens
+- **Endpoints Controller** - populates endpoint objects
+- **Job Controller** - manages job objects
+- **Namespace Controller** - manages namespaces
+- **PV Controller** - manages persistent volumes
+- Many more...
+
+**Install option:**
+- `--controllers` flag to specify which controllers to enable
+
+---
+
+## kube-scheduler
+
+**kube-scheduler** assigns pods to nodes.
+
+**Key points:**
+- Watches for newly created pods with no assigned node
+- Selects the best node for each pod to run on
+- Does NOT actually place the pod - just decides which node
+- The **kubelet** on the chosen node actually creates the pod
+- Runs on port **10259** by default
+- Deployed as a static pod in `/etc/kubernetes/manifests/` (kubeadm setup)
+
+**Scheduling process (2 phases):**
+
+1. **Filtering** - removes nodes that don't meet requirements
+   - Insufficient CPU/memory
+   - Node taints
+   - Node selectors
+   - Affinity rules
+
+2. **Scoring** - ranks remaining nodes
+   - Calculates score for each node (0-10)
+   - Picks node with highest score
+   - Uses priority functions (resource availability, spreading, etc.)
+
+**Factors considered:**
+- Resource requests (CPU, memory)
+- Node affinity/anti-affinity
+- Taints and tolerations
+- Pod priority
+- Data locality
+
+**Custom schedulers:**
+- You can write and deploy your own scheduler
+- Specify in pod spec: `schedulerName: my-custom-scheduler`
+
+---
+
+## kubelet
+
+**kubelet** is the agent that runs on every node in the cluster.
+
+**Key points:**
+- Primary node agent
+- Registers the node with the API server
+- Creates pods on the node
+- Monitors pods and nodes
+- Reports status back to the API server
+- Runs on port **10250** by default
+- **NOT deployed as a pod** - runs as a system service/daemon
+
+**What it does:**
+- Receives pod specifications (PodSpecs) from API server
+- Ensures containers described in PodSpecs are running and healthy
+- Pulls container images
+- Mounts volumes
+- Runs container health checks (liveness, readiness probes)
+- Collects and reports pod/node metrics
+- Executes pod lifecycle hooks
+
+**Works with:**
+- **Container runtime** (Docker, containerd, CRI-O) via CRI (Container Runtime Interface)
+- **kube-apiserver** for pod specs and status updates
+- **cAdvisor** for resource monitoring
+
+**Installation:**
+- Not installed by kubeadm automatically
+- Must be manually installed on worker nodes
+- Installed via package manager or binary
+
+**Important:**
+- Kubelets don't manage pods NOT created by the API server (like static pods defined locally)
+- Can run **static pods** from manifest files in `/etc/kubernetes/manifests/`
+
+---
+
+## kube-proxy
+
+**kube-proxy** is a network proxy that runs on every node.
+
+**Key points:**
+- Maintains network rules on nodes
+- Enables communication to pods from inside or outside the cluster
+- Implements Kubernetes **Service** concept
+- Runs as a **DaemonSet** (one pod per node)
+- Not an actual proxy - manages iptables/ipvs rules
+
+**What it does:**
+- Watches API server for Services and Endpoints
+- Creates network rules to forward traffic to correct pods
+- Handles load balancing across pod replicas
+- Enables Service IPs (ClusterIP) to work
+
+**Modes:**
+1. **iptables** (default) - uses iptables rules for routing
+2. **ipvs** - uses IP Virtual Server for better performance at scale
+3. **userspace** (legacy) - actually proxies connections
+4. **kernelspace** (Windows)
+
+**Example:**
+- Service has IP `10.96.0.10`
+- Backend pods: `10.244.1.5`, `10.244.2.7`
+- kube-proxy creates rules so traffic to `10.96.0.10` goes to backend pods
+
+**Installation:**
+- Deployed by kubeadm as a DaemonSet in `kube-system` namespace
+- Binary: `kube-proxy`
